@@ -1,0 +1,183 @@
+---
+title: "Project 2 Final"
+author: "John Girard"
+date: "7/31/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r echo}
+library(readr)
+library(tidyverse)
+library(MASS)
+library(naniar)
+library(caret)
+library(plyr)
+library(broom)
+library(imbalance)
+library(randomForest)
+library(kernlab)
+library(ROCR)
+library(GGally)
+library(ggcorrplot)
+library(visdat)
+library(glmnet)
+library(nnet)
+library(dplyr)
+```
+
+```{r echo}
+#read in data
+adult <- read.csv("adult.data", header = FALSE, stringsAsFactors = TRUE)
+
+#make column headers
+colnames(adult) <- c("age","workclass","fnlwgt","education","education-num","marital-status","occupation",
+                     "relationship","race","sex","capital-gain","capital-loss","hours-per-week","native-country","income")
+
+#dupe data
+adult.working <- adult
+```
+
+```{r echo}
+# drop columns that are unneeded
+# education-num is better than numeric, i have no idea what fnlwgt means, realtionship is in other columns
+# native country is not important to me at first
+adult.working <- dplyr::select(adult.working, -education, -fnlwgt, -relationship, -"native-country",-"capital-gain", -"capital-loss")
+#start messing with subs
+#clean up working class
+adult.working$workclass <- gsub('Self-emp-inc', 'SelfEmployed',adult.working$workclass)
+adult.working$workclass <- gsub('Self-emp-not-inc', 'SelfEmployed',adult.working$workclass)
+adult.working$workclass <- gsub('Local-gov', 'Government',adult.working$workclass)
+adult.working$workclass <- gsub('State-gov', 'Government',adult.working$workclass)
+adult.working$workclass <- gsub('Federal-gov', 'Government',adult.working$workclass)
+adult.working$workclass <- gsub('Other', 'Other/Unknown', adult.working$workclass)
+adult.working$workclass <- gsub('Unknown', 'Other/Unknown', adult.working$workclass)
+
+#clean marital status
+adult.working$marital.status <- gsub('Married-civ-spouse', 'married', adult.working$marital.status)
+adult.working$marital.status <- gsub('Married-spouse-absent', 'married', adult.working$marital.status) 
+adult.working$marital.status <- gsub('Never-married', 'single', adult.working$marital.status)
+adult.working$marital.status <- gsub('Widowed','widowed', adult.working$marital.status)
+adult.working$marital.status <- gsub('Seperated','seperated', adult.working$marital.status)
+adult.working$marital.status <- gsub('Divorced','divorce', adult.working$marital.status)
+adult.working$marital.status <- as.factor(adult.working$marital.status)
+adult.working$marital.status <- gsub('Separated','divorce', adult.working$marital.status)
+adult.working$marital.status <- gsub('widowed','single', adult.working$marital.status)
+
+#clean occupations
+adult.working$occupation<- gsub('Adm-clerical', 'whitecollar', adult.working$occupation)
+adult.working$occupation <- gsub('Armed-Forces', 'military', adult.working$occupation)
+adult.working$occupation <- gsub('Craft-repair', 'bluecollar', adult.working$occupation) 
+adult.working$occupation <- gsub('Exec-managerial', 'whitecollar', adult.working$occupation)
+adult.working$occupation <- gsub('Farming-fishing', 'bluecollar', adult.working$occupation)
+adult.working$occupation <- gsub('Handlers-cleaners', 'bluecollar', adult.working$occupation)
+adult.working$occupation <- gsub('Machine-op-inspct', 'bluecollar', adult.working$occupation)
+adult.working$occupation <- gsub('Other-service', 'service', adult.working$occupation)
+adult.working$occupation <- gsub('Priv-house-serv', 'service', adult.working$occupation)
+adult.working$occupation <- gsub('Prof-specialty', 'professional', adult.working$occupation)
+adult.working$occupation <- gsub('Protective-ser', 'service', adult.working$occupation)
+adult.working$occupation <- gsub('servicev', 'service', adult.working$occupation)
+adult.working$occupation <- gsub('Sales', 'sales', adult.working$occupation)
+adult.working$occupation <- gsub('Tech-support', 'service', adult.working$occupation)
+adult.working$occupation <- gsub('Transport-moving', 'bluecollar', adult.working$occupation)
+adult.working$occupation <- as.factor(adult.working$occupation)
+
+#clean randoms
+adult.working$workclass <- as.factor(adult.working$workclass)
+adult.working$marital.status <- as.factor(adult.working$marital.status)
+adult.working$workclass <- gsub('Unknown', 'Other/Unknown', adult.working$workclass)
+summary(adult.working)
+str(adult.working)
+levels(adult.working$workclass)
+levels(adult.working$workclass)[1] <- 'Unknown'
+
+#workclass needs to become a factor
+summary(adult.working)
+adult.working <- transform(adult.working, workclass=as.factor(workclass))
+str(adult.working)
+```
+
+```{r echo}
+#working class and income
+ggplot(adult.working, aes(workclass, fill=income)) + geom_bar() + ggtitle("Working Class and Income") + xlab("Work Class") + ylab ("Count of Responses")
+#race
+ggplot(adult.working, aes(race, fill=income)) + geom_bar() + ggtitle("Race and Income") + xlab("Race") + ylab ("Count of Responses")
+#sex
+ggplot(adult.working, aes(sex, y="count", colour=income)) +
+  geom_bar(stat="identity")
+#marital status
+ggplot(adult.working, aes(marital.status, fill=income)) + geom_bar() + ggtitle("Marital Status and Income") + xlab("Work Class") + ylab ("Count of Responses")
+
+#graph for continuous eda
+boxplot(age ~ income, data = adult.working,
+        main = "Age and Income",
+        xlab = "Income Status", ylab = "Age",
+        col = "light green")
+boxplot(education.num ~ income, data = adult.working,
+        main = "Education and Income",
+        xlab = "Income Status", ylab = "Education",
+        col = "light green")
+boxplot(hours.per.week ~ income, data = adult.working,
+        main = "Hours Worked and Income",
+        xlab = "Income Status", ylab = "Hours per week",
+        col = "light green")
+```
+
+```{r echo}
+#only onjective 1
+Obj1lreg <- glm(income~.,data=adult.working,family = binomial('logit'))
+summary(Obj1lreg)
+#confint(Obj1lreg)
+Obj1FS <- Obj1lreg
+Obj1FS <- glm(income ~ 1 , data = adult.working, family = binomial('logit'))
+
+#confusion matrix
+Obj1lreg <- glm(income~.,data=adult.working,family = binomial('logit'))
+summary(Obj1lreg)
+#confint(Obj1lreg)
+plot(Obj1lreg)
+table(prediction, adult.working$income)
+(22813+4102)/(22813+4102+3739+1907)
+
+#step wise
+#forward
+step(Obj1FS, trace = F, scope = list(lower=formula(Obj1FS), upper=formula(Obj1FS)),direction = 'forward')
+#back
+step(Obj1FS, trace = F, scope = list(lower=formula(Obj1FS), upper=formula(Obj1FS)),direction = 'backward')
+#Plot Cooks distance
+plot(Obj1lreg)
+```
+
+```{r echo}
+#on objective 2
+Index <- createDataPartition(adult.working$income, p = .8, list = FALSE, times = 1)
+IncomeTrain<-adult.working[Index,]
+IncomeTest<-adult.working[-Index,]
+set.seed(999)
+trainCtrl = trainControl(method = "cv", number =10)
+Obj2lreg = train(income~age + workclass + education.num + marital.status + sex + hours.per.week, trControl = trainCtrl, method = "gbm", data = IncomeTrain)
+Obj2lreg
+plot(Obj2lreg)
+#confusion matrix
+confusionMatrix (IncomeTrain$income, predict (Obj2lreg, IncomeTrain))
+
+```
+
+```{r echo}
+ldamodel2 <- lda(income~age+hours.per.week+education.num, data=IncomeTrain)
+ldamodel2
+plot(ldamodel2)
+PredictLDA <- predict(ldamodel2, newdata = IncomeTrain)
+#CM
+ldaCM <- table(IncomeTrain$income,PredictLDA$class)
+ldaCM
+(18600+1957)/(18600+1176+4316+1957)
+```
+
+```{r echo}
+# making auc roc information
+PredictionHolder <- prediction(probability, adult.working$income)
+PerformanceHolder <- performance(prediction, measure = "tpr", x.measure = "fpr")
+```
