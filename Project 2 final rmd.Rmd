@@ -175,9 +175,3 @@ ldaCM <- table(IncomeTrain$income,PredictLDA$class)
 ldaCM
 (18600+1957)/(18600+1176+4316+1957)
 ```
-
-```{r echo}
-# making auc roc information
-PredictionHolder <- prediction(probability, adult.working$income)
-PerformanceHolder <- performance(prediction, measure = "tpr", x.measure = "fpr")
-```
